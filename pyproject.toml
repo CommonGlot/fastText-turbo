@@ -1,2 +1,5 @@
 [build-system]
-requires = ["setuptools", "wheel", "pybind11"]
+# pybind11 2.12 is the first release that supports NumPy 2; wheels built with
+# it work with NumPy 1 and 2.
+requires = ["setuptools>=61", "wheel", "pybind11>=2.12"]
+build-backend = "setuptools.build_meta"

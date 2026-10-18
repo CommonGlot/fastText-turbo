@@ -1,3 +1,43 @@
+# fastText-turbo
+
+A fork of [fastText](https://github.com/facebookresearch/fastText) with the
+same `import fasttext`, command line and model files, and:
+
+- **Same models and labels:** trained models are byte-identical to
+  fastText's and load in either; predictions give the same labels, with
+  probabilities within about 1e-5 on x86 and byte-identical on ARM.
+- **Faster prediction:** on one CPU core, GlotLID v3 (dimension 256) about
+  4x on x86 and 1.7x on Apple silicon; a dimension-64 model 2.6x on x86.
+- **Multi-threaded prediction:** `fasttext predict model.bin input.txt k th threads`,
+  output in input order.
+- **NumPy 1 and 2:** the `copy=False` calls that fail on NumPy 2 are fixed.
+- **Short-text training:** `-cropProb`, `-cropMin`, `-cropMax`,
+  `-cropUnit char|word` train on random spans of each line.
+- **Normalized-text training:** `-normProb` trains on lines lowercased and
+  stripped of punctuation and digits, like the CommonLID input cleaner.
+- **Prebuilt wheels** for Linux, macOS and Windows, Python 3.9-3.13.
+
+Both training options are off by default and are not stored in the model.
+How it works and full benchmarks:
+[Fast Inference for fastText](https://commonglot.github.io/blog/fasttext-turbo.html).
+
+```bash
+pip uninstall fasttext   # both packages install the `fasttext` module
+pip install fasttext-turbo
+```
+
+Usage is the same as fastText: the Python module is still `fasttext` and the
+command-line tool is still `fasttext`, so existing code works unchanged.
+
+```python
+import fasttext
+
+model = fasttext.load_model("lid.176.bin")   # any fastText model
+labels, probs = model.predict("Bonjour tout le monde", k=2)
+```
+
+The rest of this README is fastText's.
+
 # fastText
 [fastText](https://fasttext.cc/) is a library for efficient learning of word representations and sentence classification.
 
