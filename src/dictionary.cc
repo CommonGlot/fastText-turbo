@@ -17,6 +17,8 @@
 #include <iterator>
 #include <stdexcept>
 
+#include "textnorm.h"
+
 namespace fasttext {
 
 const std::string Dictionary::EOS = "</s>";
@@ -409,6 +411,129 @@ int32_t Dictionary::getLine(
   }
   addWordNgrams(words, word_hashes, args_->wordNgrams);
   return ntokens;
+}
+
+// Training variant for -cropProb and -normProb (FastText::trainThread uses it
+// only when one of them is set). Labels are read as in getLine; with
+// probability -cropProb only a random span of -cropMin..-cropMax characters
+// or words of the text is kept, and with probability -normProb the words are
+// normalized like the CommonLID input cleaner. Features are then computed as
+// in getLine. The returned token count is that of the whole line, so the
+// learning-rate schedule does not change.
+int32_t Dictionary::getLine(
+    std::istream& in,
+    std::vector<int32_t>& words,
+    std::vector<int32_t>& labels,
+    std::minstd_rand& rng) const {
+  std::vector<std::string> tokens;
+  std::string token;
+  int32_t ntokens = 0;
+
+  reset(in);
+  words.clear();
+  labels.clear();
+  while (readWord(in, token)) {
+    uint32_t h = hash(token);
+    int32_t wid = getId(token, h);
+    entry_type type = wid < 0 ? getType(token) : getType(wid);
+    ntokens++;
+    if (type == entry_type::word) {
+      tokens.push_back(token);
+    } else if (type == entry_type::label && wid >= 0) {
+      labels.push_back(wid - nwords_);
+    }
+    if (token == EOS) {
+      break;
+    }
+  }
+  if (args_->cropProb > 0 &&
+      std::uniform_real_distribution<>(0, 1)(rng) < args_->cropProb) {
+    cropTokens(tokens, rng);
+  }
+  // Normalize after cropping, as when a short input is cleaned before
+  // prediction.
+  if (args_->normProb > 0 &&
+      std::uniform_real_distribution<>(0, 1)(rng) < args_->normProb) {
+    std::vector<std::string> kept;
+    for (auto& t : tokens) {
+      if (t != EOS) {
+        text::normalizeToken(t);
+      }
+      if (!t.empty()) {
+        kept.push_back(std::move(t));
+      }
+    }
+    tokens.swap(kept);
+  }
+  std::vector<int32_t> word_hashes;
+  for (const auto& t : tokens) {
+    uint32_t h = hash(t);
+    int32_t wid = getId(t, h);
+    entry_type type = wid < 0 ? getType(t) : getType(wid);
+    if (type == entry_type::word) {
+      addSubwords(words, t, wid);
+      word_hashes.push_back(h);
+    }
+  }
+  addWordNgrams(words, word_hashes, args_->wordNgrams);
+  return ntokens;
+}
+
+// Keeps a random span of the text tokens (the end-of-sentence token stays):
+// cropUnit "word" counts tokens, "char" counts UTF-8 characters of the
+// tokens joined by single spaces.
+void Dictionary::cropTokens(
+    std::vector<std::string>& tokens,
+    std::minstd_rand& rng) const {
+  const bool eos = !tokens.empty() && tokens.back() == EOS;
+  if (eos) {
+    tokens.pop_back();
+  }
+  const int32_t length =
+      std::uniform_int_distribution<int32_t>(args_->cropMin, args_->cropMax)(rng);
+  if (args_->cropUnit == "word") {
+    if (length < static_cast<int32_t>(tokens.size())) {
+      auto first = tokens.begin() +
+          std::uniform_int_distribution<size_t>(0, tokens.size() - length)(rng);
+      tokens = std::vector<std::string>(first, first + length);
+    }
+  } else {
+    std::string joined;
+    for (const auto& t : tokens) {
+      if (!joined.empty()) {
+        joined.push_back(' ');
+      }
+      joined += t;
+    }
+    std::vector<size_t> starts;
+    for (size_t i = 0; i < joined.size(); i++) {
+      if (!text::isContinuation(static_cast<uint8_t>(joined[i]))) {
+        starts.push_back(i);
+      }
+    }
+    if (length < static_cast<int32_t>(starts.size())) {
+      const size_t first =
+          std::uniform_int_distribution<size_t>(0, starts.size() - length)(rng);
+      const size_t begin = starts[first];
+      const size_t end = first + length < starts.size() ? starts[first + length]
+                                                        : joined.size();
+      tokens.clear();
+      std::string word;
+      for (size_t i = begin; i <= end; i++) {
+        if (i == end || joined[i] == ' ') {
+          if (!word.empty()) {
+            tokens.push_back(word);
+            word.clear();
+          }
+        } else {
+          word.push_back(joined[i]);
+        }
+      }
+    }
+  }
+  if (eos) {
+    tokens.push_back(EOS);
+  }
 }
 
 namespace {

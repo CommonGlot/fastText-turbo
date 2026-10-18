@@ -652,7 +652,11 @@ void FastText::trainThread(int32_t threadId, const TrainCallback& callback) {
       }
       real lr = args_->lr * (1.0 - progress);
       if (args_->model == model_name::sup) {
-        localTokenCount += dict_->getLine(ifs, line, labels);
+        if (args_->cropProb > 0.0 || args_->normProb > 0.0) {
+          localTokenCount += dict_->getLine(ifs, line, labels, state.rng);
+        } else {
+          localTokenCount += dict_->getLine(ifs, line, labels);
+        }
         supervised(state, lr, line, labels);
       } else if (args_->model == model_name::cbow) {
         localTokenCount += dict_->getLine(ifs, line, state.rng);
@@ -741,6 +745,16 @@ std::shared_ptr<Matrix> FastText::createTrainOutputMatrix() const {
 }
 
 void FastText::train(const Args& args, const TrainCallback& callback) {
+  if (!(args.cropProb >= 0.0 && args.cropProb <= 1.0) ||
+      !(args.normProb >= 0.0 && args.normProb <= 1.0)) {
+    throw std::invalid_argument("-cropProb and -normProb must be in [0, 1]");
+  }
+  if (args.cropProb > 0.0 && (args.cropMin < 1 || args.cropMax < args.cropMin)) {
+    throw std::invalid_argument("-cropProb needs 1 <= -cropMin <= -cropMax");
+  }
+  if (args.cropUnit != "char" && args.cropUnit != "word") {
+    throw std::invalid_argument("-cropUnit must be char or word");
+  }
   args_ = std::make_shared<Args>(args);
   dict_ = std::make_shared<Dictionary>(args_);
   if (args_->input == "-") {

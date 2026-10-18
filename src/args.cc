@@ -40,6 +40,11 @@ Args::Args() {
   pretrainedVectors = "";
   saveOutput = false;
   seed = 0;
+  cropProb = 0.0;
+  cropMin = 1;
+  cropMax = 0;
+  cropUnit = "char";
+  normProb = 0.0;
 
   qout = false;
   retrain = false;
@@ -189,6 +194,16 @@ void Args::parseArgs(const std::vector<std::string>& args) {
         ai--;
       } else if (args[ai] == "-seed") {
         seed = std::stoi(args.at(ai + 1));
+      } else if (args[ai] == "-cropProb") {
+        cropProb = std::stod(args.at(ai + 1));
+      } else if (args[ai] == "-cropMin") {
+        cropMin = std::stoi(args.at(ai + 1));
+      } else if (args[ai] == "-cropMax") {
+        cropMax = std::stoi(args.at(ai + 1));
+      } else if (args[ai] == "-cropUnit") {
+        cropUnit = std::string(args.at(ai + 1));
+      } else if (args[ai] == "-normProb") {
+        normProb = std::stod(args.at(ai + 1));
       } else if (args[ai] == "-qnorm") {
         qnorm = true;
         ai--;
@@ -289,7 +304,15 @@ void Args::printTrainingHelp() {
       << pretrainedVectors << "]\n"
       << "  -saveOutput         whether output params should be saved ["
       << boolToString(saveOutput) << "]\n"
-      << "  -seed               random generator seed  [" << seed << "]\n";
+      << "  -seed               random generator seed  [" << seed << "]\n"
+      << "  -cropProb           probability of training on a random span of a "
+         "line [" << cropProb << "]\n"
+      << "  -cropMin            min span length [" << cropMin << "]\n"
+      << "  -cropMax            max span length [" << cropMax << "]\n"
+      << "  -cropUnit           span unit: char or word [" << cropUnit << "]\n"
+      << "  -normProb           probability of training on the CommonLID-style\n"
+         "                      normalized line (lowercased, without punctuation\n"
+         "                      and digits) [" << normProb << "]\n";
 }
 
 void Args::printAutotuneHelp() {

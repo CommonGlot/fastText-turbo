@@ -481,6 +481,11 @@ def read_args(arg_list, arg_dict, arg_names, default_values):
         "lr_update_rate": "lrUpdateRate",
         "label_prefix": "label",
         "pretrained_vectors": "pretrainedVectors",
+        "crop_prob": "cropProb",
+        "crop_min": "cropMin",
+        "crop_max": "cropMax",
+        "crop_unit": "cropUnit",
+        "norm_prob": "normProb",
     }
 
     ret = {}
@@ -524,6 +529,11 @@ def train_supervised(*kargs, **kwargs):
             "maxn": 0,
             "loss": "softmax",
             "model": "supervised",
+            "cropProb": 0.0,
+            "cropMin": 1,
+            "cropMax": 0,
+            "cropUnit": "char",
+            "normProb": 0.0,
         }
     )
 
@@ -553,6 +563,11 @@ def train_supervised(*kargs, **kwargs):
         "autotunePredictions",
         "autotuneDuration",
         "autotuneModelSize",
+        "cropProb",
+        "cropMin",
+        "cropMax",
+        "cropUnit",
+        "normProb",
     ]
     args, manually_set_args = read_args(kargs, kwargs, arg_names, supervised_default)
     a = _build_args(args, manually_set_args)

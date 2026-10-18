@@ -59,6 +59,12 @@ class Args {
   std::string pretrainedVectors;
   bool saveOutput;
   int seed;
+  // Training only; not saved in model files.
+  double cropProb;
+  int cropMin;
+  int cropMax;
+  std::string cropUnit;
+  double normProb;
 
   bool qout;
   bool retrain;

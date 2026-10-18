@@ -43,6 +43,7 @@ class Dictionary {
   void initNgrams();
   void reset(std::istream&) const;
   void pushHash(std::vector<int32_t>&, int32_t) const;
+  void cropTokens(std::vector<std::string>&, std::minstd_rand&) const;
   void addSubwords(std::vector<int32_t>&, const std::string_view, int32_t) const;
 
   std::shared_ptr<Args> args_;
@@ -100,6 +101,8 @@ class Dictionary {
       const;
   int32_t getLine(std::istream&, std::vector<int32_t>&, std::minstd_rand&)
       const;
+  int32_t getLine(std::istream&, std::vector<int32_t>&, std::vector<int32_t>&,
+      std::minstd_rand&) const;
   int32_t getStringNoNewline(std::string_view, std::vector<int32_t>&,
       std::vector<int32_t>&) const;
   void threshold(int64_t, int64_t);

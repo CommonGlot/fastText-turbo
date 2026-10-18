@@ -39,7 +39,7 @@ autotune.o: src/autotune.cc src/autotune.h
 matrix.o: src/matrix.cc src/matrix.h
 	$(CXX) $(CXXFLAGS) -c src/matrix.cc
 
-dictionary.o: src/dictionary.cc src/dictionary.h src/args.h
+dictionary.o: src/dictionary.cc src/dictionary.h src/args.h src/textnorm.h src/norm_table.h src/unicode_fold.h
 	$(CXX) $(CXXFLAGS) -c src/dictionary.cc
 
 loss.o: src/loss.cc src/loss.h src/matrix.h src/real.h
@@ -93,7 +93,7 @@ autotune.bc: src/autotune.cc src/autotune.h
 matrix.bc: src/matrix.cc src/matrix.h
 	$(EMCXX) $(EMCXXFLAGS) src/matrix.cc -o matrix.bc
 
-dictionary.bc: src/dictionary.cc src/dictionary.h src/args.h
+dictionary.bc: src/dictionary.cc src/dictionary.h src/args.h src/textnorm.h src/norm_table.h src/unicode_fold.h
 	$(EMCXX) $(EMCXXFLAGS)  src/dictionary.cc -o dictionary.bc
 
 loss.bc: src/loss.cc src/loss.h src/matrix.h src/real.h

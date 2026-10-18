@@ -111,6 +111,11 @@ PYBIND11_MODULE(fasttext_pybind, m) {
       .def_readwrite("pretrainedVectors", &fasttext::Args::pretrainedVectors)
       .def_readwrite("saveOutput", &fasttext::Args::saveOutput)
       .def_readwrite("seed", &fasttext::Args::seed)
+      .def_readwrite("cropProb", &fasttext::Args::cropProb)
+      .def_readwrite("cropMin", &fasttext::Args::cropMin)
+      .def_readwrite("cropMax", &fasttext::Args::cropMax)
+      .def_readwrite("cropUnit", &fasttext::Args::cropUnit)
+      .def_readwrite("normProb", &fasttext::Args::normProb)
 
       .def_readwrite("qout", &fasttext::Args::qout)
       .def_readwrite("retrain", &fasttext::Args::retrain)

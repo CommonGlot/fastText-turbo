@@ -37,6 +37,13 @@ The following arguments are mandatory:
   -thread             number of threads [12]
   -pretrainedVectors  pretrained word vectors for supervised learning []
   -saveOutput         whether output params should be saved [0]
+  -cropProb           probability of training on a random span of a line [0]
+  -cropMin            min span length [1]
+  -cropMax            max span length [0]
+  -cropUnit           span unit: char or word [char]
+  -normProb           probability of training on the CommonLID-style
+                      normalized line (lowercased, without punctuation
+                      and digits) [0]
 
   The following arguments for quantization are optional:
   -cutoff             number of words and ngrams to retain [0]
