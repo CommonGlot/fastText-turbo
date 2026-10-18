@@ -69,6 +69,8 @@ class DenseMatrix : public Matrix {
   void l2NormRow(Vector& norms) const;
 
   real dotRow(const Vector&, int64_t) const override;
+  void multiplyVector(Vector& out, const Vector& vec) const override;
+  void multiplyVectorFast(Vector& out, const Vector& vec) const override;
   void addVectorToRow(const Vector&, int64_t, real) override;
   void addRowToVector(Vector& x, int32_t i) const override;
   void addRowToVector(Vector& x, int32_t i, real a) const override;

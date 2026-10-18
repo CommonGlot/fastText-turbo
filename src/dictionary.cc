@@ -174,20 +174,20 @@ void Dictionary::computeSubwords(
     std::vector<int32_t>& ngrams,
     std::vector<std::string>* substrings) const {
   for (size_t i = 0; i < word.size(); i++) {
-    std::string ngram;
     if ((word[i] & 0xC0) == 0x80) {
       continue;
     }
+    // The FNV hash is extended byte by byte, giving hash(ngram) for every
+    // prefix without building each n-gram string.
+    uint32_t h = 2166136261;
     for (size_t j = i, n = 1; j < word.size() && n <= args_->maxn; n++) {
-      ngram.push_back(word[j++]);
-      while (j < word.size() && (word[j] & 0xC0) == 0x80) {
-        ngram.push_back(word[j++]);
-      }
+      do {
+        h = (h ^ uint32_t(int8_t(word[j++]))) * 16777619;
+      } while (j < word.size() && (word[j] & 0xC0) == 0x80);
       if (n >= args_->minn && !(n == 1 && (i == 0 || j == word.size()))) {
-        int32_t h = hash(ngram) % args_->bucket;
-        pushHash(ngrams, h);
+        pushHash(ngrams, h % args_->bucket);
         if (substrings) {
-          substrings->push_back(ngram);
+          substrings->push_back(word.substr(i, j - i));
         }
       }
     }

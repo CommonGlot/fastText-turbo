@@ -80,8 +80,16 @@ void Loss::findKBest(
     if (output[i] < threshold) {
       continue;
     }
-    if (heap.size() == k && std_log(output[i]) < heap.front().first) {
-      continue;
+    if (heap.size() == k) {
+      // std_log(x) = log(x + 1e-5) is increasing, so a probability clearly
+      // below the k-th best is skipped without taking its log; the margin
+      // makes the log difference far larger than float rounding, so the
+      // result is the same as the comparison of logs below.
+      const real best = output[heap.front().second];
+      if (output[i] + 1e-5 < (best + 1e-5) * 0.999 ||
+          std_log(output[i]) < heap.front().first) {
+        continue;
+      }
     }
     heap.push_back(std::make_pair(std_log(output[i]), i));
     std::push_heap(heap.begin(), heap.end(), comparePairs);
@@ -116,7 +124,11 @@ real BinaryLogisticLoss::binaryLogistic(
 
 void BinaryLogisticLoss::computeOutput(Model::State& state) const {
   Vector& output = state.output;
-  output.mul(*wo_, state.hidden);
+  if (state.predicting) {
+    output.mulFast(*wo_, state.hidden);
+  } else {
+    output.mul(*wo_, state.hidden);
+  }
   int32_t osz = output.size();
   for (int32_t i = 0; i < osz; i++) {
     output[i] = sigmoid(output[i]);
@@ -304,7 +316,11 @@ SoftmaxLoss::SoftmaxLoss(std::shared_ptr<Matrix>& wo) : Loss(wo) {}
 
 void SoftmaxLoss::computeOutput(Model::State& state) const {
   Vector& output = state.output;
-  output.mul(*wo_, state.hidden);
+  if (state.predicting) {
+    output.mulFast(*wo_, state.hidden);
+  } else {
+    output.mul(*wo_, state.hidden);
+  }
   real max = output[0], z = 0.0;
   int32_t osz = output.size();
   for (int32_t i = 0; i < osz; i++) {

@@ -11,6 +11,10 @@ CXXFLAGS = -pthread -std=c++17 -march=native
 OBJS = args.o autotune.o matrix.o dictionary.o loss.o productquantizer.o densematrix.o quantmatrix.o vector.o model.o utils.o meter.o fasttext.o
 INCLUDES = -I.
 
+# Objects depend on every header, so a change to a shared struct (such as
+# Model::State) rebuilds everything that uses it.
+$(OBJS): src/*.h
+
 opt: CXXFLAGS += -O3 -funroll-loops -DNDEBUG
 opt: fasttext
 

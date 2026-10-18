@@ -123,6 +123,112 @@ real DenseMatrix::dotRow(const Vector& vec, int64_t i) const {
   return d;
 }
 
+void DenseMatrix::multiplyVector(Vector& out, const Vector& vec) const {
+#if defined(__clang__)
+  // dotRow's sum is not fused into FMA instructions; do the same here so
+  // the results stay identical (clang would otherwise fuse this loop).
+#pragma clang fp contract(off)
+#endif
+  assert(out.size() == m_);
+  assert(vec.size() == n_);
+  // Eight rows per pass: each element of vec is loaded once for eight rows and
+  // the eight sums are independent, so they overlap in the pipeline. Every
+  // row is summed in the same order as dotRow, so the results are identical.
+  constexpr int64_t kRows = 8;
+  const real* v = vec.data();
+  real* o = out.data();
+  int64_t i = 0;
+  for (; i + kRows <= m_; i += kRows) {
+    const real* row = data_.data() + i * n_;
+    real d[kRows] = {};
+    for (int64_t j = 0; j < n_; j++) {
+      const real x = v[j];
+      for (int64_t r = 0; r < kRows; r++) {
+        d[r] += row[r * n_ + j] * x;
+      }
+    }
+    for (int64_t r = 0; r < kRows; r++) {
+      o[i + r] = d[r];
+    }
+  }
+  for (; i < m_; i++) {
+    const real* row = data_.data() + i * n_;
+    real d = 0.0;
+    for (int64_t j = 0; j < n_; j++) {
+      d += row[j] * v[j];
+    }
+    o[i] = d;
+  }
+  for (int64_t k = 0; k < m_; k++) {
+    if (std::isnan(o[k])) {
+      throw EncounteredNaNError();
+    }
+  }
+}
+
+void DenseMatrix::multiplyVectorFast(Vector& out, const Vector& vec) const {
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+  // x86: every dot product uses eight partial sums, which the compiler turns
+  // into SIMD (SSE/AVX) operations, for eight rows per pass. The sums are
+  // added in a different order than in dotRow, so scores differ from it by
+  // float rounding only. (On ARM the exact multiplyVector is as fast.)
+  assert(out.size() == m_);
+  assert(vec.size() == n_);
+  constexpr int64_t kRows = 8;
+  constexpr int64_t kLanes = 8;
+  const real* v = vec.data();
+  real* o = out.data();
+  const int64_t nv = n_ - n_ % kLanes;
+  int64_t i = 0;
+  for (; i + kRows <= m_; i += kRows) {
+    const real* row = data_.data() + i * n_;
+    real partial[kRows][kLanes] = {};
+    for (int64_t j = 0; j < nv; j += kLanes) {
+      for (int64_t r = 0; r < kRows; r++) {
+        for (int64_t l = 0; l < kLanes; l++) {
+          partial[r][l] += row[r * n_ + j + l] * v[j + l];
+        }
+      }
+    }
+    for (int64_t r = 0; r < kRows; r++) {
+      real d = 0.0;
+      for (int64_t l = 0; l < kLanes; l++) {
+        d += partial[r][l];
+      }
+      for (int64_t j = nv; j < n_; j++) {
+        d += row[r * n_ + j] * v[j];
+      }
+      o[i + r] = d;
+    }
+  }
+  for (; i < m_; i++) {
+    const real* row = data_.data() + i * n_;
+    real partial[kLanes] = {};
+    int64_t j = 0;
+    for (; j < nv; j += kLanes) {
+      for (int64_t l = 0; l < kLanes; l++) {
+        partial[l] += row[j + l] * v[j + l];
+      }
+    }
+    real d = 0.0;
+    for (int64_t l = 0; l < kLanes; l++) {
+      d += partial[l];
+    }
+    for (; j < n_; j++) {
+      d += row[j] * v[j];
+    }
+    o[i] = d;
+  }
+  for (int64_t k = 0; k < m_; k++) {
+    if (std::isnan(o[k])) {
+      throw EncounteredNaNError();
+    }
+  }
+#else
+  multiplyVector(out, vec);
+#endif
+}
+
 void DenseMatrix::addVectorToRow(const Vector& vec, int64_t i, real a) {
   assert(i >= 0);
   assert(i < m_);
@@ -208,8 +314,34 @@ template <unsigned Cols> void averageRowsFast(Vector& x, const std::vector<int32
 }
 #endif
 
+#if !(defined(__AVX512F__) || defined(__AVX__) || defined(__SSE__))
+/* Portable version of averageRowsFast: a fixed-size local accumulator that
+ * the compiler can keep in vector registers (e.g. NEON on ARM). */
+template <unsigned Cols> void averageRowsFast(Vector& x, const std::vector<int32_t>& rows, const DenseMatrix &matrix) {
+  if (rows.empty()) {
+    x.zero();
+    x.mul(1.0 / rows.size());
+    return;
+  }
+  real accum[Cols];
+  const real* base = matrix.data() + matrix.cols() * rows[0];
+  for (unsigned i = 0; i < Cols; ++i) {
+    accum[i] = base[i];
+  }
+  for (size_t r = 1; r < rows.size(); ++r) {
+    base = matrix.data() + matrix.cols() * rows[r];
+    for (unsigned i = 0; i < Cols; ++i) {
+      accum[i] += base[i];
+    }
+  }
+  const real mul = 1.0 / rows.size();
+  for (unsigned i = 0; i < Cols; ++i) {
+    x[i] = accum[i] * mul;
+  }
+}
+#endif
+
 void DenseMatrix::averageRowsToVector(Vector& x, const std::vector<int32_t>& rows) const {
-#if defined(__AVX512F__) || defined(__AVX__) || defined(__SSE__)
   switch (cols()) {
     case 512:
       // Maximum number that can fit all in registers on AVX512F.
@@ -224,11 +356,13 @@ void DenseMatrix::averageRowsToVector(Vector& x, const std::vector<int32_t>& row
     case 32:
       averageRowsFast<32>(x, rows, *this);
       return;
+    case 128:
+      averageRowsFast<128>(x, rows, *this);
+      return;
     case 16:
       averageRowsFast<16>(x, rows, *this);
       return;
   }
-#endif
   x.zero();
   for (auto it = rows.cbegin(); it != rows.cend(); ++it) {
     addRowToVector(x, *it);

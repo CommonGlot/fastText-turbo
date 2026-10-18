@@ -50,6 +50,9 @@ class Model {
     Vector output;
     Vector grad;
     std::minstd_rand rng;
+    // Set by Model::predict: scores may then use the platform's fastest
+    // summation (see Matrix::multiplyVectorFast); training never sets it.
+    bool predicting = false;
 
     State(int32_t hiddenSize, int32_t outputSize, int32_t seed);
     real getLoss() const;

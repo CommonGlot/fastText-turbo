@@ -54,6 +54,9 @@ class Vector {
   void addRow(const Matrix&, int64_t);
   void addRow(const Matrix&, int64_t, real);
   void mul(const Matrix&, const Vector&);
+  // Same as mul, with the summation order that is fastest on this platform
+  // (Matrix::multiplyVectorFast); used for prediction.
+  void mulFast(const Matrix&, const Vector&);
   int64_t argmax();
 };
 

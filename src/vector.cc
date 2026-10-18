@@ -68,9 +68,13 @@ void Vector::addRow(const Matrix& A, int64_t i) {
 void Vector::mul(const Matrix& A, const Vector& vec) {
   assert(A.size(0) == size());
   assert(A.size(1) == vec.size());
-  for (int64_t i = 0; i < size(); i++) {
-    data_[i] = A.dotRow(vec, i);
-  }
+  A.multiplyVector(*this, vec);
+}
+
+void Vector::mulFast(const Matrix& A, const Vector& vec) {
+  assert(A.size(0) == size());
+  assert(A.size(1) == vec.size());
+  A.multiplyVectorFast(*this, vec);
 }
 
 int64_t Vector::argmax() {

@@ -59,7 +59,9 @@ void Model::predict(
   heap.reserve(k + 1);
   computeHidden(input, state);
 
+  state.predicting = true;
   loss_->predict(k, threshold, heap, state);
+  state.predicting = false;
 }
 
 void Model::update(

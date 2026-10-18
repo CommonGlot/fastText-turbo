@@ -9,7 +9,9 @@
 #include <iomanip>
 #include <iostream>
 #include <queue>
+#include <sstream>
 #include <stdexcept>
+#include <thread>
 #include "args.h"
 #include "autotune.h"
 #include "fasttext.h"
@@ -59,11 +61,13 @@ void printTestUsage() {
 
 void printPredictUsage() {
   std::cerr
-      << "usage: fasttext predict[-prob] <model> <test-data> [<k>] [<th>]\n\n"
+      << "usage: fasttext predict[-prob] <model> <test-data> [<k>] [<th>] [<threads>]\n\n"
       << "  <model>      model filename\n"
       << "  <test-data>  test data filename (if -, read from stdin)\n"
       << "  <k>          (optional; 1 by default) predict top k labels\n"
       << "  <th>         (optional; 0.0 by default) probability threshold\n"
+      << "  <threads>    (optional; 1 by default) number of threads; the output\n"
+      << "               keeps the input order\n"
       << std::endl;
 }
 
@@ -209,18 +213,80 @@ void printPredictions(
   }
 }
 
+// Predicts batches of lines on several threads and prints them in input order.
+void predictParallel(
+    const FastText& model,
+    std::istream& in,
+    int32_t k,
+    real threshold,
+    bool printProb,
+    int32_t threads) {
+  const size_t batchSize = 1 << 16;
+  std::vector<std::string> lines;
+  std::vector<std::string> outputs(batchSize);
+  bool more = true;
+  while (more) {
+    lines.clear();
+    std::string line;
+    while (lines.size() < batchSize && std::getline(in, line)) {
+      // Keep the end-of-line token that the single-threaded path sees.
+      if (!in.eof()) {
+        line.push_back('\n');
+      }
+      lines.push_back(std::move(line));
+    }
+    more = lines.size() == batchSize;
+    std::vector<std::thread> workers;
+    for (int32_t t = 0; t < threads; t++) {
+      workers.emplace_back([&, t]() {
+        std::vector<std::pair<real, std::string>> predictions;
+        for (size_t i = t; i < lines.size(); i += threads) {
+          std::istringstream iss(lines[i]);
+          predictions.clear();
+          model.predictLine(iss, predictions, k, threshold);
+          std::ostringstream out;
+          bool first = true;
+          for (const auto& prediction : predictions) {
+            out << (first ? "" : " ") << prediction.second;
+            if (printProb) {
+              out << " " << prediction.first;
+            }
+            first = false;
+          }
+          outputs[i] = out.str();
+        }
+      });
+    }
+    for (auto& worker : workers) {
+      worker.join();
+    }
+    for (size_t i = 0; i < lines.size(); i++) {
+      std::cout << outputs[i] << '\n';
+    }
+    std::cout.flush();
+  }
+}
+
 void predict(const std::vector<std::string>& args) {
-  if (args.size() < 4 || args.size() > 6) {
+  if (args.size() < 4 || args.size() > 7) {
     printPredictUsage();
     exit(EXIT_FAILURE);
   }
   int32_t k = 1;
   real threshold = 0.0;
+  int32_t threads = 1;
   if (args.size() > 4) {
     k = std::stoi(args[4]);
-    if (args.size() == 6) {
+    if (args.size() >= 6) {
       threshold = std::stof(args[5]);
     }
+    if (args.size() == 7) {
+      threads = std::stoi(args[6]);
+    }
+  }
+  if (threads < 1) {
+    printPredictUsage();
+    exit(EXIT_FAILURE);
   }
 
   bool printProb = args[1] == "predict-prob";
@@ -238,9 +304,13 @@ void predict(const std::vector<std::string>& args) {
     }
   }
   std::istream& in = inputIsStdIn ? std::cin : ifs;
-  std::vector<std::pair<real, std::string>> predictions;
-  while (fasttext.predictLine(in, predictions, k, threshold)) {
-    printPredictions(predictions, printProb, false);
+  if (threads > 1) {
+    predictParallel(fasttext, in, k, threshold, printProb, threads);
+  } else {
+    std::vector<std::pair<real, std::string>> predictions;
+    while (fasttext.predictLine(in, predictions, k, threshold)) {
+      printPredictions(predictions, printProb, false);
+    }
   }
   if (ifs.is_open()) {
     ifs.close();
