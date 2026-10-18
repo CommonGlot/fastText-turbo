@@ -118,7 +118,8 @@ class BuildExt(build_ext):
     """A custom build extension for adding compiler-specific options."""
 
     c_opts = {
-        "msvc": ["/EHsc"],
+        # fastText uses C++17 (std::string_view); MSVC defaults to C++14.
+        "msvc": ["/EHsc", "/std:c++17"],
         "unix": [],
     }
 

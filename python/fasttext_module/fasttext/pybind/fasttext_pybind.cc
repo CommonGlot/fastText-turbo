@@ -174,7 +174,7 @@ PYBIND11_MODULE(fasttext_pybind, m) {
       py::call_guard<py::gil_scoped_release>());
 
   py::class_<fasttext::Vector>(m, "Vector", py::buffer_protocol())
-      .def(py::init<ssize_t>())
+      .def(py::init<py::ssize_t>())
       .def_buffer([](fasttext::Vector& m) -> py::buffer_info {
         return py::buffer_info(
             m.data(),
@@ -188,7 +188,7 @@ PYBIND11_MODULE(fasttext_pybind, m) {
   py::class_<fasttext::DenseMatrix>(
       m, "DenseMatrix", py::buffer_protocol(), py::module_local())
       .def(py::init<>())
-      .def(py::init<ssize_t, ssize_t>())
+      .def(py::init<py::ssize_t, py::ssize_t>())
       .def_buffer([](fasttext::DenseMatrix& m) -> py::buffer_info {
         return py::buffer_info(
             m.data(),
