@@ -262,16 +262,22 @@ using Register = __m512;
 inline Register Add(Register first, Register second) { return _mm512_add_ps(first, second); }
 inline Register Set1(float to) { return _mm512_set1_ps(to); }
 inline Register Multiply(Register first, Register second) { return _mm512_mul_ps(first, second); }
+inline Register LoadU(const float* p) { return _mm512_loadu_ps(p); }
+inline void StoreU(float* p, Register r) { _mm512_storeu_ps(p, r); }
 #elif defined(__AVX__)
 using Register = __m256;
 inline Register Add(Register first, Register second) { return _mm256_add_ps(first, second); }
 inline Register Set1(float to) { return _mm256_set1_ps(to); }
 inline Register Multiply(Register first, Register second) { return _mm256_mul_ps(first, second); }
+inline Register LoadU(const float* p) { return _mm256_loadu_ps(p); }
+inline void StoreU(float* p, Register r) { _mm256_storeu_ps(p, r); }
 #elif defined(__SSE__)
 using Register = __m128;
 inline Register Add(Register first, Register second) { return _mm_add_ps(first, second); }
 inline Register Set1(float to) { return _mm_set1_ps(to); }
 inline Register Multiply(Register first, Register second) { return _mm_mul_ps(first, second); }
+inline Register LoadU(const float* p) { return _mm_loadu_ps(p); }
+inline void StoreU(float* p, Register r) { _mm_storeu_ps(p, r); }
 #endif
 
 /* Faster routine for averaging rows of a matrix on x86.
@@ -310,6 +316,60 @@ template <unsigned Cols> void averageRowsFast(Vector& x, const std::vector<int32
   Register mul = Set1(1.0 / rows.size());
   for (unsigned i = 0; i < RegisterCount; ++i) {
     reinterpret_cast<Register*>(x.data())[i] = Multiply(accum[i], mul);
+  }
+}
+#endif
+
+#if defined(__AVX512F__) || defined(__AVX__) || defined(__SSE__)
+/* averageRowsFast for any number of columns: the columns are taken in blocks of
+ * Regs registers, and each block keeps its accumulators in registers while all
+ * rows are added. Rows are added in the same order as in addRowToVector, so the
+ * result is the same. Loads are unaligned: when the width is not a multiple of
+ * the register width, rows do not start on register boundaries. */
+template <unsigned Regs>
+void averageBlock(real* out, const std::vector<int32_t>& rows, const real* data, int64_t cols, int64_t off, real mul) {
+  constexpr int64_t W = sizeof(Register) / 4;
+  Register accum[Regs];
+  const real* base = data + cols * rows[0] + off;
+  for (unsigned i = 0; i < Regs; ++i) {
+    accum[i] = LoadU(base + i * W);
+  }
+  for (size_t r = 1; r < rows.size(); ++r) {
+    base = data + cols * rows[r] + off;
+    for (unsigned i = 0; i < Regs; ++i) {
+      accum[i] = Add(accum[i], LoadU(base + i * W));
+    }
+  }
+  const Register m = Set1(mul);
+  for (unsigned i = 0; i < Regs; ++i) {
+    StoreU(out + off + i * W, Multiply(accum[i], m));
+  }
+}
+
+void averageRowsBlocked(Vector& x, const std::vector<int32_t>& rows, const DenseMatrix& matrix) {
+  if (rows.empty()) {
+    x.zero();
+    x.mul(1.0 / rows.size());
+    return;
+  }
+  constexpr int64_t W = sizeof(Register) / 4;
+  const int64_t cols = matrix.cols();
+  const real* data = matrix.data();
+  real* out = x.data();
+  const real mul = 1.0 / rows.size();
+  int64_t off = 0;
+  for (; off + 8 * W <= cols; off += 8 * W) {
+    averageBlock<8>(out, rows, data, cols, off, mul);
+  }
+  for (; off + W <= cols; off += W) {
+    averageBlock<1>(out, rows, data, cols, off, mul);
+  }
+  for (; off < cols; ++off) {
+    real sum = data[cols * rows[0] + off];
+    for (size_t r = 1; r < rows.size(); ++r) {
+      sum += data[cols * rows[r] + off];
+    }
+    out[off] = sum * mul;
   }
 }
 #endif
@@ -367,6 +427,15 @@ void DenseMatrix::averageRowsToVector(Vector& x, const std::vector<int32_t>& row
       averageRowsFast<16>(x, rows, *this);
       return;
   }
+#if defined(__AVX512F__) || defined(__AVX__) || defined(__SSE__)
+  // Measured on x86 (dimensions 10 to 768): the blocked version is faster from
+  // two registers wide up to about 320 columns; wider rows need many passes
+  // over the row list and are faster accumulated in memory as below.
+  if (cols() >= 2 * int64_t(sizeof(Register) / 4) && cols() <= 320) {
+    averageRowsBlocked(x, rows, *this);
+    return;
+  }
+#endif
   x.zero();
   for (auto it = rows.cbegin(); it != rows.cend(); ++it) {
     addRowToVector(x, *it);
