@@ -179,17 +179,32 @@ real ProductQuantizer::mulcode(
     const uint8_t* codes,
     int32_t t,
     real alpha) const {
-  real res = 0.0;
-  auto d = dsub_;
+  // Same sums in the same order as get_centroids per subquantizer, with the
+  // last subquantizer (lastdsub_ wide) taken out of the loop and dsub_ == 2
+  // (the default) unrolled.
   const uint8_t* code = codes + nsubq_ * t;
-  for (auto m = 0; m < nsubq_; m++) {
-    const real* c = get_centroids(m, code[m]);
-    if (m == nsubq_ - 1) {
-      d = lastdsub_;
+  const real* xd = x.data();
+  const real* cent = centroids_.data();
+  const int64_t stride = int64_t(ksub_) * dsub_;
+  const int32_t full = nsubq_ - 1;
+  real res = 0.0;
+  if (dsub_ == 2) {
+    for (int32_t m = 0; m < full; m++) {
+      const real* c = cent + m * stride + code[m] * 2;
+      res += xd[2 * m] * c[0];
+      res += xd[2 * m + 1] * c[1];
     }
-    for (auto n = 0; n < d; n++) {
-      res += x[m * dsub_ + n] * c[n];
+  } else {
+    for (int32_t m = 0; m < full; m++) {
+      const real* c = cent + m * stride + code[m] * dsub_;
+      for (int32_t n = 0; n < dsub_; n++) {
+        res += xd[m * dsub_ + n] * c[n];
+      }
     }
+  }
+  const real* c = cent + full * stride + code[full] * lastdsub_;
+  for (int32_t n = 0; n < lastdsub_; n++) {
+    res += xd[full * dsub_ + n] * c[n];
   }
   return res * alpha;
 }
@@ -199,16 +214,31 @@ void ProductQuantizer::addcode(
     const uint8_t* codes,
     int32_t t,
     real alpha) const {
-  auto d = dsub_;
+  // Decoding one row of a quantized matrix is the inner loop of prediction
+  // with .ftz models: same additions as before, with the last subquantizer
+  // out of the loop and dsub_ == 2 unrolled.
   const uint8_t* code = codes + nsubq_ * t;
-  for (auto m = 0; m < nsubq_; m++) {
-    const real* c = get_centroids(m, code[m]);
-    if (m == nsubq_ - 1) {
-      d = lastdsub_;
+  real* xd = x.data();
+  const real* cent = centroids_.data();
+  const int64_t stride = int64_t(ksub_) * dsub_;
+  const int32_t full = nsubq_ - 1;
+  if (dsub_ == 2) {
+    for (int32_t m = 0; m < full; m++) {
+      const real* c = cent + m * stride + code[m] * 2;
+      xd[2 * m] += alpha * c[0];
+      xd[2 * m + 1] += alpha * c[1];
     }
-    for (auto n = 0; n < d; n++) {
-      x[m * dsub_ + n] += alpha * c[n];
+  } else {
+    for (int32_t m = 0; m < full; m++) {
+      const real* c = cent + m * stride + code[m] * dsub_;
+      for (int32_t n = 0; n < dsub_; n++) {
+        xd[m * dsub_ + n] += alpha * c[n];
+      }
     }
+  }
+  const real* c = cent + full * stride + code[full] * lastdsub_;
+  for (int32_t n = 0; n < lastdsub_; n++) {
+    xd[full * dsub_ + n] += alpha * c[n];
   }
 }
 

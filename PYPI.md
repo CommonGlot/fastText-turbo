@@ -16,7 +16,8 @@ pip install fasttext-turbo
 - **Faster prediction, same labels.** The output layer is computed eight
   labels at a time (on x86 with SIMD sums), top-k skips the log for labels
   that cannot enter the top k, and subword hashes are computed
-  incrementally. Labels are the same as fastText's; probabilities are within
+  incrementally; quantized (`.ftz`) rows are decoded in an unrolled loop.
+  Labels are the same as fastText's; probabilities are within
   about 1e-5 on x86 and byte-identical on ARM. On one CPU core, GlotLID v3
   (dimension 256) predicts about 4x faster on x86 and 1.7x on Apple silicon. See
   [Fast Inference for fastText](https://commonglot.github.io/blog/fasttext-turbo.html)

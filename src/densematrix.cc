@@ -350,6 +350,10 @@ void DenseMatrix::averageRowsToVector(Vector& x, const std::vector<int32_t>& row
     case 256:
       averageRowsFast<256>(x, rows, *this);
       return;
+    case 96:
+      // GlotLID v4 uses dimension 96.
+      averageRowsFast<96>(x, rows, *this);
+      return;
     case 64:
       averageRowsFast<64>(x, rows, *this);
       return;

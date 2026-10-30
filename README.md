@@ -8,6 +8,8 @@ same `import fasttext`, command line and model files, and:
   probabilities within about 1e-5 on x86 and byte-identical on ARM.
 - **Faster prediction:** on one CPU core, GlotLID v3 (dimension 256) about
   4x on x86 and 1.7x on Apple silicon; a dimension-64 model 2.6x on x86.
+  Quantized `.ftz` models decode their rows in an unrolled loop, about 1.4x
+  faster than in 0.1.0, with the same output.
 - **Multi-threaded prediction:** `fasttext predict model.bin input.txt k th threads`,
   output in input order.
 - **NumPy 1 and 2:** the `copy=False` calls that fail on NumPy 2 are fixed.
