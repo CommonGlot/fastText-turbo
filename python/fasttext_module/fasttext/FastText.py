@@ -76,6 +76,14 @@ class _Meter:
         return recall
 
 
+def _one_line(text):
+    """The text as one line for the C++ reader, which stops at the first line break: every
+    line break becomes a space and the closing newline is added."""
+    if "\n" in text:
+        text = text.replace("\n", " ")
+    return text + "\n"
+
+
 class _FastText:
     """
     This class defines the API to inspect models and should not be used to
@@ -138,13 +146,11 @@ class _FastText:
     def get_sentence_vector(self, text):
         """
         Given a string, get a single vector represenation. This function
-        assumes to be given a single line of text. We split words on
+        treats its input as one line: line breaks count as spaces. We split words on
         whitespace (space, newline, tab, vertical tab) and the control
         characters carriage return, formfeed and the null character.
         """
-        if text.find("\n") != -1:
-            raise ValueError("predict processes one line at a time (remove '\\n')")
-        text += "\n"
+        text = _one_line(text)
         dim = self.get_dimension()
         b = fasttext.Vector(dim)
         self.f.getSentenceVector(b, text)
@@ -204,8 +210,8 @@ class _FastText:
         probability. k and threshold will be applied together to
         determine the returned labels.
 
-        This function assumes to be given
-        a single line of text. We split words on whitespace (space,
+        The text is one line: line breaks count as spaces (pass a list
+        to get one prediction per line). We split words on whitespace (space,
         newline, tab, vertical tab) and the control characters carriage
         return, formfeed and the null character.
 
@@ -215,21 +221,15 @@ class _FastText:
         received for a single line of text.
         """
 
-        def check(entry):
-            if entry.find("\n") != -1:
-                raise ValueError("predict processes one line at a time (remove '\\n')")
-            entry += "\n"
-            return entry
-
         if type(text) == list:
-            text = [check(entry) for entry in text]
+            text = [_one_line(entry) for entry in text]
             all_labels, all_probs = self.f.multilinePredict(
                 text, k, threshold, on_unicode_error
             )
 
             return all_labels, all_probs
         else:
-            text = check(text)
+            text = _one_line(text)
             predictions = self.f.predict(text, k, threshold, on_unicode_error)
             if predictions:
                 probs, labels = zip(*predictions)
@@ -293,17 +293,11 @@ class _FastText:
         the prefix used to create the model (__label__ by default).
         """
 
-        def check(entry):
-            if entry.find("\n") != -1:
-                raise ValueError("get_line processes one line at a time (remove '\\n')")
-            entry += "\n"
-            return entry
-
         if type(text) == list:
-            text = [check(entry) for entry in text]
+            text = [_one_line(entry) for entry in text]
             return self.f.multilineGetLine(text, on_unicode_error)
         else:
-            text = check(text)
+            text = _one_line(text)
             return self.f.getLine(text, on_unicode_error)
 
     def save_model(self, path):

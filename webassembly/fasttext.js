@@ -251,10 +251,8 @@ class FastTextModel {
      *
      */
   getSentenceVector(text) {
-    if (text.indexOf('\n') != -1) {
-      "sentence vector processes one line at a time (remove '\\n')";
-    }
-    text += '\n';
+    // one line for the C++ reader: line breaks count as spaces
+    text = text.replace(/\n/g, ' ') + '\n';
     const b = getFloat32ArrayFromHeap(this.getDimension());
     this.f.getSentenceVector(b, text);
 
