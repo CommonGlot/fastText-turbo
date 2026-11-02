@@ -53,6 +53,16 @@ class ProductQuantizer {
 
   real mulcode(const Vector&, const uint8_t*, int32_t, real) const;
   void addcode(Vector&, const uint8_t*, int32_t, real) const;
+  // addcode(x, codes, rows[i], alphas[i]) for i = 0 .. n-1, in that order:
+  // every value of x gets the same additions in the same order, so the
+  // result is identical; each value's sum stays in a register while the
+  // rows are read (one subquantizer's centroids at a time).
+  void addcodes(
+      Vector& x,
+      const uint8_t* codes,
+      const int32_t* rows,
+      const real* alphas,
+      int64_t n) const;
   void compute_code(const real*, uint8_t*) const;
   void compute_codes(const real*, uint8_t*, int32_t) const;
 

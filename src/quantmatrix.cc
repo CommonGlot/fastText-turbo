@@ -81,10 +81,16 @@ void QuantMatrix::addRowToVector(Vector& x, int32_t i) const {
 }
 
 void QuantMatrix::averageRowsToVector(Vector& x, const std::vector<int32_t>& rows) const {
+  // The same additions as addRowToVector for each row in turn (identical
+  // result), with each value of x summed over all the rows at once.
   x.zero();
-  for (auto it = rows.cbegin(); it != rows.cend(); ++it) {
-    addRowToVector(x, *it);
+  std::vector<real> alphas(rows.size(), 1.0);
+  if (qnorm_) {
+    for (size_t i = 0; i < rows.size(); i++) {
+      alphas[i] = npq_->get_centroids(0, norm_codes_[rows[i]])[0];
+    }
   }
+  pq_->addcodes(x, codes_.data(), rows.data(), alphas.data(), rows.size());
   x.mul(1.0 / rows.size());
 }
 

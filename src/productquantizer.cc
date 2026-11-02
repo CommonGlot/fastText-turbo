@@ -242,6 +242,56 @@ void ProductQuantizer::addcode(
   }
 }
 
+void ProductQuantizer::addcodes(
+    Vector& x,
+    const uint8_t* codes,
+    const int32_t* rows,
+    const real* alphas,
+    int64_t n) const {
+  // Written like addcode (x += alpha * c per value), so the compiler treats
+  // both the same way (for instance, whether it fuses them into FMA).
+  real* xd = x.data();
+  const real* cent = centroids_.data();
+  const int64_t stride = int64_t(ksub_) * dsub_;
+  const int32_t full = nsubq_ - 1;
+  std::vector<const uint8_t*> code(n);
+  for (int64_t i = 0; i < n; i++) {
+    code[i] = codes + int64_t(nsubq_) * rows[i];
+  }
+  if (dsub_ == 2) {
+    for (int32_t m = 0; m < full; m++) {
+      const real* cm = cent + m * stride;
+      real a0 = xd[2 * m], a1 = xd[2 * m + 1];
+      for (int64_t i = 0; i < n; i++) {
+        const real* c = cm + code[i][m] * 2;
+        a0 += alphas[i] * c[0];
+        a1 += alphas[i] * c[1];
+      }
+      xd[2 * m] = a0;
+      xd[2 * m + 1] = a1;
+    }
+  } else {
+    for (int32_t m = 0; m < full; m++) {
+      const real* cm = cent + m * stride;
+      for (int32_t d = 0; d < dsub_; d++) {
+        real a = xd[m * dsub_ + d];
+        for (int64_t i = 0; i < n; i++) {
+          a += alphas[i] * cm[code[i][m] * dsub_ + d];
+        }
+        xd[m * dsub_ + d] = a;
+      }
+    }
+  }
+  const real* cl = cent + full * stride;
+  for (int32_t d = 0; d < lastdsub_; d++) {
+    real a = xd[full * dsub_ + d];
+    for (int64_t i = 0; i < n; i++) {
+      a += alphas[i] * cl[code[i][full] * lastdsub_ + d];
+    }
+    xd[full * dsub_ + d] = a;
+  }
+}
+
 void ProductQuantizer::compute_code(const real* x, uint8_t* code) const {
   auto d = dsub_;
   for (auto m = 0; m < nsubq_; m++) {

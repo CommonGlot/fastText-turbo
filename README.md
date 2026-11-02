@@ -8,8 +8,10 @@ same `import fasttext`, command line and model files, and:
   probabilities within about 1e-5 on x86 and byte-identical on ARM.
 - **Faster prediction:** on one CPU core, GlotLID v3 (dimension 256) about
   4x on x86 and 1.7x on Apple silicon; a dimension-64 model 2.6x on x86.
-  Quantized `.ftz` models decode their rows in an unrolled loop, about 1.4x
-  faster than in 0.1.0, and models of any width from two registers to 320
+  Quantized `.ftz` models decode their rows in an unrolled loop and sum a
+  line's rows one subquantizer at a time (each sum in a register), about 1.4x
+  and then 1.2x faster than in 0.1.0 (GlotLID .ftz: 8.1k -> 9.8k lines/s on
+  one x86 core), and models of any width from two registers to 320
   (e.g. fastText's default 100) average their input rows in registers, as the
   widths 16-512 that fastText special-cases already did; same output.
 - **Multi-threaded prediction:** `fasttext predict model.bin input.txt k th threads`,
