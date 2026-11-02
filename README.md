@@ -25,7 +25,7 @@ same `import fasttext`, command line and model files, and:
   `-cropUnit char|word` train on random spans of each line.
 - **Normalized-text training:** `-normProb` trains on lines lowercased and
   stripped of punctuation and digits, like the CommonLID input cleaner.
-- **Prebuilt wheels** for Linux, macOS and Windows, Python 3.9-3.13.
+- **Prebuilt wheels** for Linux, macOS and Windows, Python 3.9-3.15.
 
 Both training options are off by default and are not stored in the model.
 How it works and full benchmarks:
