@@ -198,7 +198,7 @@ class _FastText:
         self.f.getInputVector(b, ind)
         return np.array(b)
 
-    def predict(self, text, k=1, threshold=0.0, on_unicode_error="strict"):
+    def predict(self, text, k=1, threshold=0.0, on_unicode_error="strict", threads=1):
         """
         Given a string, get a list of labels and a list of
         corresponding probabilities. k controls the number
@@ -218,13 +218,15 @@ class _FastText:
         If the model is not supervised, this function will throw a ValueError.
 
         If given a list of strings, it will return a list of results as usually
-        received for a single line of text.
+        received for a single line of text. A list is scored in batches; with
+        threads > 1 the batches are shared among that many threads (the
+        results are the same as with threads=1).
         """
 
         if type(text) == list:
             text = [_one_line(entry) for entry in text]
             all_labels, all_probs = self.f.multilinePredict(
-                text, k, threshold, on_unicode_error
+                text, k, threshold, on_unicode_error, int(threads)
             )
 
             return all_labels, all_probs

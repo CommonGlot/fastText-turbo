@@ -65,6 +65,14 @@ class Model {
       real threshold,
       Predictions& heap,
       State& state) const;
+  // predict for several inputs at once: heaps[i] gets the predictions of
+  // inputs[i], the same as predict gives (none for an empty input).
+  void predictBatch(
+      const std::vector<std::vector<int32_t>>& inputs,
+      int32_t k,
+      real threshold,
+      std::vector<Predictions>& heaps,
+      State& state) const;
   void update(
       const std::vector<int32_t>& input,
       const std::vector<int32_t>& targets,

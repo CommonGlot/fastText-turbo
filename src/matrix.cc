@@ -10,6 +10,8 @@
 
 #include "vector.h"
 
+#include <algorithm>
+
 namespace fasttext {
 
 Matrix::Matrix() : m_(0), n_(0) {}
@@ -32,6 +34,18 @@ void Matrix::multiplyVector(Vector& out, const Vector& vec) const {
 
 void Matrix::multiplyVectorFast(Vector& out, const Vector& vec) const {
   multiplyVector(out, vec);
+}
+
+void Matrix::multiplyVectorsFast(
+    real* out,
+    const real* vecs,
+    int64_t nvecs) const {
+  Vector v(n_), o(m_);
+  for (int64_t b = 0; b < nvecs; b++) {
+    std::copy(vecs + b * n_, vecs + (b + 1) * n_, v.data());
+    multiplyVectorFast(o, v);
+    std::copy(o.data(), o.data() + m_, out + b * m_);
+  }
 }
 
 } // namespace fasttext

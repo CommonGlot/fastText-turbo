@@ -21,14 +21,13 @@
 namespace fasttext {
 
 class Loss {
- private:
+ protected:
   void findKBest(
       int32_t k,
       real threshold,
       Predictions& heap,
       const Vector& output) const;
 
- protected:
   std::vector<real> t_sigmoid_;
   std::vector<real> t_log_;
   std::shared_ptr<Matrix>& wo_;
@@ -53,6 +52,16 @@ class Loss {
       real /*threshold*/,
       Predictions& /*heap*/,
       Model::State& /*state*/) const;
+  // predict for nvecs hidden vectors stored one after another in hidden
+  // (size(1) of the output matrix each); heaps[b] gets the predictions of
+  // vector b, the same as predict gives. The default calls predict for each.
+  virtual void predictBatch(
+      int32_t k,
+      real threshold,
+      const real* hidden,
+      int64_t nvecs,
+      std::vector<Predictions>& heaps,
+      Model::State& state) const;
 };
 
 class BinaryLogisticLoss : public Loss {
@@ -158,6 +167,18 @@ class SoftmaxLoss : public Loss {
       real lr,
       bool backprop) override;
   void computeOutput(Model::State& state) const override;
+  // Scores all the vectors with one pass over the output matrix
+  // (Matrix::multiplyVectorsFast), then the same softmax as predict.
+  void predictBatch(
+      int32_t k,
+      real threshold,
+      const real* hidden,
+      int64_t nvecs,
+      std::vector<Predictions>& heaps,
+      Model::State& state) const override;
+
+ private:
+  static void softmax(Vector& output);
 };
 
 } // namespace fasttext

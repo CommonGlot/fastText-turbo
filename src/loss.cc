@@ -71,6 +71,20 @@ void Loss::predict(
   std::sort_heap(heap.begin(), heap.end(), comparePairs);
 }
 
+void Loss::predictBatch(
+    int32_t k,
+    real threshold,
+    const real* hidden,
+    int64_t nvecs,
+    std::vector<Predictions>& heaps,
+    Model::State& state) const {
+  const int64_t dim = state.hidden.size();
+  for (int64_t b = 0; b < nvecs; b++) {
+    std::copy(hidden + b * dim, hidden + (b + 1) * dim, state.hidden.data());
+    predict(k, threshold, heaps[b], state);
+  }
+}
+
 void Loss::findKBest(
     int32_t k,
     real threshold,
@@ -321,6 +335,29 @@ void SoftmaxLoss::computeOutput(Model::State& state) const {
   } else {
     output.mul(*wo_, state.hidden);
   }
+  softmax(output);
+}
+
+void SoftmaxLoss::predictBatch(
+    int32_t k,
+    real threshold,
+    const real* hidden,
+    int64_t nvecs,
+    std::vector<Predictions>& heaps,
+    Model::State& state) const {
+  Vector& output = state.output;
+  const int64_t osz = output.size();
+  std::vector<real> scores(nvecs * osz);
+  wo_->multiplyVectorsFast(scores.data(), hidden, nvecs);
+  for (int64_t b = 0; b < nvecs; b++) {
+    std::copy(scores.data() + b * osz, scores.data() + (b + 1) * osz, output.data());
+    softmax(output);
+    findKBest(k, threshold, heaps[b], output);
+    std::sort_heap(heaps[b].begin(), heaps[b].end(), comparePairs);
+  }
+}
+
+void SoftmaxLoss::softmax(Vector& output) {
   real max = output[0], z = 0.0;
   int32_t osz = output.size();
   for (int32_t i = 0; i < osz; i++) {

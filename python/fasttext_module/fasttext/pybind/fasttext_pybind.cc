@@ -419,14 +419,21 @@ PYBIND11_MODULE(fasttext_pybind, m) {
              const std::vector<std::string>& lines,
              int32_t k,
              fasttext::real threshold,
-             const char* onUnicodeError) {
+             const char* onUnicodeError,
+             int32_t threads) {
             std::vector<py::array_t<fasttext::real>> allProbabilities;
             std::vector<std::vector<py::str>> allLabels;
-            std::vector<std::pair<fasttext::real, std::string>> predictions;
+            // Scored in batches (FastText::predictLines): the same results
+            // as predictLine for each line, with one pass over the output
+            // matrix per batch.
+            std::vector<std::vector<std::pair<fasttext::real, std::string>>>
+                linePredictions;
+            {
+              py::gil_scoped_release release;
+              m.predictLines(lines, linePredictions, k, threshold, threads);
+            }
 
-            for (const std::string& text : lines) {
-              std::stringstream ioss(text);
-              m.predictLine(ioss, predictions, k, threshold);
+            for (const auto& predictions : linePredictions) {
               std::vector<fasttext::real> probabilities;
               std::vector<py::str> labels;
 

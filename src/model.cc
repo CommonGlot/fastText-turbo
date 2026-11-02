@@ -64,6 +64,42 @@ void Model::predict(
   state.predicting = false;
 }
 
+void Model::predictBatch(
+    const std::vector<std::vector<int32_t>>& inputs,
+    int32_t k,
+    real threshold,
+    std::vector<Predictions>& heaps,
+    State& state) const {
+  if (k == Model::kUnlimitedPredictions) {
+    k = wo_->size(0); // output size
+  } else if (k <= 0) {
+    throw std::invalid_argument("k needs to be 1 or higher!");
+  }
+  heaps.assign(inputs.size(), Predictions());
+  const int64_t dim = state.hidden.size();
+  std::vector<real> hidden;
+  std::vector<size_t> which;
+  hidden.reserve(inputs.size() * dim);
+  for (size_t i = 0; i < inputs.size(); i++) {
+    if (inputs[i].empty()) {
+      continue;
+    }
+    computeHidden(inputs[i], state);
+    hidden.insert(hidden.end(), state.hidden.data(), state.hidden.data() + dim);
+    which.push_back(i);
+  }
+  std::vector<Predictions> found(which.size());
+  for (auto& heap : found) {
+    heap.reserve(k + 1);
+  }
+  state.predicting = true;
+  loss_->predictBatch(k, threshold, hidden.data(), which.size(), found, state);
+  state.predicting = false;
+  for (size_t j = 0; j < which.size(); j++) {
+    heaps[which[j]] = std::move(found[j]);
+  }
+}
+
 void Model::update(
     const std::vector<int32_t>& input,
     const std::vector<int32_t>& targets,

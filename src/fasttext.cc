@@ -11,6 +11,7 @@
 #include "quantmatrix.h"
 
 #include <algorithm>
+#include <exception>
 #include <iomanip>
 #include <iostream>
 #include <numeric>
@@ -485,6 +486,74 @@ bool FastText::predictLine(
   }
 
   return true;
+}
+
+void FastText::predictLines(
+    const std::vector<std::string>& lines,
+    std::vector<std::vector<std::pair<real, std::string>>>& predictions,
+    int32_t k,
+    real threshold,
+    int32_t threads) const {
+  if (args_->model != model_name::sup) {
+    throw std::invalid_argument("Model needs to be supervised for prediction!");
+  }
+  constexpr size_t kBatch = 256;
+  predictions.assign(lines.size(), {});
+  const size_t nbatches = (lines.size() + kBatch - 1) / kBatch;
+  // Batch b goes to thread b % threads; each thread has its own state and
+  // writes only the predictions of its own lines.
+  auto work = [&](size_t first) {
+    Model::State state(args_->dim, dict_->nlabels(), 0);
+    std::vector<std::vector<int32_t>> inputs;
+    std::vector<int32_t> labels;
+    std::vector<Predictions> heaps;
+    for (size_t batch = first; batch < nbatches;
+         batch += std::max<int32_t>(threads, 1)) {
+      const size_t start = batch * kBatch;
+      const size_t end = std::min(lines.size(), start + kBatch);
+      inputs.assign(end - start, {});
+      for (size_t i = start; i < end; i++) {
+        std::istringstream in(lines[i]);
+        if (in.peek() == EOF) {
+          continue;
+        }
+        labels.clear();
+        dict_->getLine(in, inputs[i - start], labels);
+      }
+      model_->predictBatch(inputs, k, threshold, heaps, state);
+      for (size_t i = start; i < end; i++) {
+        for (const auto& p : heaps[i - start]) {
+          predictions[i].push_back(
+              std::make_pair(std::exp(p.first), dict_->getLabel(p.second)));
+        }
+      }
+    }
+  };
+  const size_t nthreads =
+      std::min<size_t>(std::max<int32_t>(threads, 1), std::max<size_t>(nbatches, 1));
+  if (nthreads <= 1) {
+    work(0);
+    return;
+  }
+  std::vector<std::thread> pool;
+  std::vector<std::exception_ptr> errors(nthreads);
+  for (size_t t = 0; t < nthreads; t++) {
+    pool.emplace_back([&, t]() {
+      try {
+        work(t);
+      } catch (...) {
+        errors[t] = std::current_exception();
+      }
+    });
+  }
+  for (auto& th : pool) {
+    th.join();
+  }
+  for (auto& e : errors) {
+    if (e) {
+      std::rethrow_exception(e);
+    }
+  }
 }
 
 void FastText::getSentenceVector(std::istream& in, fasttext::Vector& svec) {

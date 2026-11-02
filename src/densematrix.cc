@@ -229,6 +229,105 @@ void DenseMatrix::multiplyVectorFast(Vector& out, const Vector& vec) const {
 #endif
 }
 
+void DenseMatrix::multiplyVectorsFast(
+    real* out,
+    const real* vecs,
+    int64_t nvecs) const {
+#if defined(__clang__)
+  // Same as multiplyVector: no fused multiply-add, so results stay identical.
+#pragma clang fp contract(off)
+#endif
+  // Each block of eight rows is read once for all the vectors (it stays in
+  // the cache), instead of once per vector. Every dot product is summed in
+  // the same order as in multiplyVectorFast on this platform, so the scores
+  // are identical to calling it for each vector.
+  constexpr int64_t kRows = 8;
+  const int64_t m = m_, n = n_;
+  int64_t i = 0;
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+  constexpr int64_t kLanes = 8;
+  const int64_t nv = n - n % kLanes;
+  for (; i + kRows <= m; i += kRows) {
+    const real* row = data_.data() + i * n;
+    for (int64_t b = 0; b < nvecs; b++) {
+      const real* v = vecs + b * n;
+      real partial[kRows][kLanes] = {};
+      for (int64_t j = 0; j < nv; j += kLanes) {
+        for (int64_t r = 0; r < kRows; r++) {
+          for (int64_t l = 0; l < kLanes; l++) {
+            partial[r][l] += row[r * n + j + l] * v[j + l];
+          }
+        }
+      }
+      for (int64_t r = 0; r < kRows; r++) {
+        real d = 0.0;
+        for (int64_t l = 0; l < kLanes; l++) {
+          d += partial[r][l];
+        }
+        for (int64_t j = nv; j < n; j++) {
+          d += row[r * n + j] * v[j];
+        }
+        out[b * m + i + r] = d;
+      }
+    }
+  }
+  for (; i < m; i++) {
+    const real* row = data_.data() + i * n;
+    for (int64_t b = 0; b < nvecs; b++) {
+      const real* v = vecs + b * n;
+      real partial[kLanes] = {};
+      int64_t j = 0;
+      for (; j < nv; j += kLanes) {
+        for (int64_t l = 0; l < kLanes; l++) {
+          partial[l] += row[j + l] * v[j + l];
+        }
+      }
+      real d = 0.0;
+      for (int64_t l = 0; l < kLanes; l++) {
+        d += partial[l];
+      }
+      for (; j < n; j++) {
+        d += row[j] * v[j];
+      }
+      out[b * m + i] = d;
+    }
+  }
+#else
+  for (; i + kRows <= m; i += kRows) {
+    const real* row = data_.data() + i * n;
+    for (int64_t b = 0; b < nvecs; b++) {
+      const real* v = vecs + b * n;
+      real d[kRows] = {};
+      for (int64_t j = 0; j < n; j++) {
+        const real x = v[j];
+        for (int64_t r = 0; r < kRows; r++) {
+          d[r] += row[r * n + j] * x;
+        }
+      }
+      for (int64_t r = 0; r < kRows; r++) {
+        out[b * m + i + r] = d[r];
+      }
+    }
+  }
+  for (; i < m; i++) {
+    const real* row = data_.data() + i * n;
+    for (int64_t b = 0; b < nvecs; b++) {
+      const real* v = vecs + b * n;
+      real d = 0.0;
+      for (int64_t j = 0; j < n; j++) {
+        d += row[j] * v[j];
+      }
+      out[b * m + i] = d;
+    }
+  }
+#endif
+  for (int64_t k = 0; k < nvecs * m; k++) {
+    if (std::isnan(out[k])) {
+      throw EncounteredNaNError();
+    }
+  }
+}
+
 void DenseMatrix::addVectorToRow(const Vector& vec, int64_t i, real a) {
   assert(i >= 0);
   assert(i < m_);

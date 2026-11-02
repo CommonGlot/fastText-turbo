@@ -141,6 +141,18 @@ class FastText {
       int32_t k,
       real threshold) const;
 
+  // predictLine for each of lines (one line each, as predictLine reads it):
+  // predictions[i] gets the same predictions as predictLine gives for lines[i].
+  // Lines are scored in batches, reading the output matrix once per batch;
+  // with threads > 1 the batches are shared among that many threads (the
+  // results do not change).
+  void predictLines(
+      const std::vector<std::string>& lines,
+      std::vector<std::vector<std::pair<real, std::string>>>& predictions,
+      int32_t k,
+      real threshold,
+      int32_t threads = 1) const;
+
   std::vector<std::pair<std::string, Vector>> getNgramVectors(
       const std::string& word) const;
 

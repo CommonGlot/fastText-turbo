@@ -34,6 +34,15 @@ with tempfile.TemporaryDirectory() as root:
         assert again.predict("Die Stadt ist schön", k=2)[0] == labels
         many = again.predict(["hello world", "bonjour le monde"], k=1)
         assert len(many[0]) == 2
+        # A list is scored in batches (and threads): the same labels and
+        # probabilities as one line at a time, empty lines included.
+        lines = [t for texts in EXAMPLES.values() for t in texts] * 300 + ["", "x"]
+        one = [again.predict(t, k=3) for t in lines]
+        for threads in (1, 4):
+            labels_b, probs_b = again.predict(lines, k=3, threads=threads)
+            for (l1, p1), l2, p2 in zip(one, labels_b, probs_b):
+                assert list(l1) == list(l2), (l1, l2)
+                assert np.array_equal(p1, p2), (p1, p2)
     try:
         fasttext.train_supervised(input=train, crop_prob=1.5, verbose=0)
     except ValueError:

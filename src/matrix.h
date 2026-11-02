@@ -39,6 +39,14 @@ class Matrix {
   // Like multiplyVector, but each dot product may be summed in another order
   // if that is faster on this platform (results within float rounding).
   virtual void multiplyVectorFast(Vector& out, const Vector& vec) const;
+  // multiplyVectorFast for nvecs vectors at once: vecs holds them one after
+  // another (size(1) values each) and out receives size(0) values per vector,
+  // the same values multiplyVectorFast gives for each. Subclasses may read
+  // each row once for all the vectors.
+  virtual void multiplyVectorsFast(
+      real* out,
+      const real* vecs,
+      int64_t nvecs) const;
   virtual void addVectorToRow(const Vector&, int64_t, real) = 0;
   virtual void addRowToVector(Vector& x, int32_t i) const = 0;
   virtual void addRowToVector(Vector& x, int32_t i, real a) const = 0;
