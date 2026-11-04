@@ -171,10 +171,33 @@ uint32_t Dictionary::hash(const std::string_view str) const {
   return h;
 }
 
+namespace {
+// h % d for 32-bit h and d without a division (Lemire, Kaser and Kurz, "Faster remainder by direct
+// computation", 2019): exact for every 32-bit h when M = floor((2^64 - 1) / d) + 1. Each word's
+// n-grams need one bucket remainder per n-gram, and a 32-bit division costs about 25 cycles.
+struct FastMod {
+  uint32_t d;
+#ifdef __SIZEOF_INT128__
+  uint64_t m;
+  // d is 0 for models without subwords; the remainder is then never taken.
+  explicit FastMod(uint32_t d) : d(d), m(d ? UINT64_C(0xFFFFFFFFFFFFFFFF) / d + 1 : 0) {}
+  uint32_t operator()(uint32_t h) const {
+    return uint32_t((static_cast<__uint128_t>(m * h) * d) >> 64);
+  }
+#else
+  explicit FastMod(uint32_t d) : d(d) {}
+  uint32_t operator()(uint32_t h) const {
+    return h % d;
+  }
+#endif
+};
+} // namespace
+
 void Dictionary::computeSubwords(
     const std::string& word,
     std::vector<int32_t>& ngrams,
     std::vector<std::string>* substrings) const {
+  const FastMod bucket(uint32_t(args_->bucket));
   for (size_t i = 0; i < word.size(); i++) {
     if ((word[i] & 0xC0) == 0x80) {
       continue;
@@ -187,7 +210,7 @@ void Dictionary::computeSubwords(
         h = (h ^ uint32_t(int8_t(word[j++]))) * 16777619;
       } while (j < word.size() && (word[j] & 0xC0) == 0x80);
       if (n >= args_->minn && !(n == 1 && (i == 0 || j == word.size()))) {
-        pushHash(ngrams, h % args_->bucket);
+        pushHash(ngrams, bucket(h));
         if (substrings) {
           substrings->push_back(word.substr(i, j - i));
         }
