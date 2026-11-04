@@ -55,11 +55,11 @@ with tempfile.TemporaryDirectory() as root:
             assert np.allclose(mean, again.get_sentence_vector(t), atol=1e-6), t
         try:
             import torch
-            gpu = torch.cuda.is_available()
+            gpu = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else None)
         except ImportError:
-            gpu = False
+            gpu = None
         if gpu:
-            labels_g, probs_g = again.predict(lines, k=3, threads=2, device="cuda")
+            labels_g, probs_g = again.predict(lines, k=3, threads=2, device=gpu)
             labels_c, probs_c = again.predict(lines, k=3, threads=2)
             assert [list(x) for x in labels_g] == [list(x) for x in labels_c]
             assert max((np.abs(a - b).max() if len(a) else 0.0) for a, b in zip(probs_g, probs_c)) < 1e-4

@@ -74,8 +74,11 @@ class _DeviceModel:
         per_line = 4 * (3 * self.nlab + 2 * FEATURES_PER_LINE + 2 * self.dim)
         if d.type == "cuda":
             free, _ = torch.cuda.mem_get_info(d)
+        elif d.type == "mps" and hasattr(torch.mps, "recommended_max_memory"):
+            # Apple GPUs share the system memory; Metal's recommended working set minus what is in use.
+            free = max(0, torch.mps.recommended_max_memory() - torch.mps.current_allocated_memory())
         else:
-            free = 2 ** 30  # CPU, MPS, ...: no reliable free-memory query; 1 GB of work memory
+            free = 2 ** 30  # CPU and other devices: no reliable free-memory query; 1 GB of work memory
         return int(max(MIN_BATCH, min(MAX_BATCH, free // 4 // per_line)))
 
 
@@ -133,6 +136,8 @@ def predict(model, lines, k, threshold, threads, device, on_unicode_error="stric
         except oom:
             if dev.type == "cuda":
                 torch.cuda.empty_cache()
+            elif dev.type == "mps":
+                torch.mps.empty_cache()
             m = len(off) - 1
             if m <= 1:
                 raise
