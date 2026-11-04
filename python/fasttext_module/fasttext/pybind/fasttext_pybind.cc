@@ -16,9 +16,11 @@
 #include <real.h>
 #include <vector.h>
 #include <cmath>
+#include <cstring>
 #include <iterator>
 #include <sstream>
 #include <stdexcept>
+#include <thread>
 
 using namespace pybind11::literals;
 namespace py = pybind11;
@@ -324,6 +326,135 @@ PYBIND11_MODULE(fasttext_pybind, m) {
             return text_split;
           })
       .def("getLine", &getLineText)
+      .def(
+          "getFeaturesBytes",
+          // getFeatures for a batch given as one UTF-8 buffer of lines, each ending in '\n': no
+          // per-line Python strings to convert. Each thread takes a contiguous block of lines and
+          // appends their features to one buffer of its own (no allocation per line, no two threads
+          // writing next to each other); the blocks are then copied into the output in parallel.
+          [](fasttext::FastText& m, py::bytes data, int32_t threads) {
+            std::shared_ptr<const fasttext::Dictionary> d = m.getDictionary();
+            char* buf = nullptr;
+            Py_ssize_t len = 0;
+            PyBytes_AsStringAndSize(data.ptr(), &buf, &len);
+            std::vector<int64_t> starts;
+            for (Py_ssize_t i = 0; i < len;) {
+              starts.push_back(i);
+              const void* nl = memchr(buf + i, '\n', len - i);
+              i = nl ? static_cast<const char*>(nl) - buf + 1 : len;
+            }
+            starts.push_back(len);
+            const int64_t n = starts.size() - 1;
+            const int32_t t = std::max<int32_t>(1, std::min<int64_t>(threads, std::max<int64_t>(n, 1)));
+            struct LineBuf : std::streambuf {
+              void set(char* b, char* e) {
+                setg(b, b, e);
+              }
+            };
+            auto parallel = [&](auto&& body) {
+              std::vector<std::thread> pool;
+              for (int32_t w = 1; w < t; w++) {
+                pool.emplace_back(body, w);
+              }
+              body(0);
+              for (auto& th : pool) {
+                th.join();
+              }
+            };
+            std::vector<std::vector<int32_t>> block(t);   // features of thread w's lines, appended
+            std::vector<int64_t> count(n);                 // features per line
+            {
+              py::gil_scoped_release release;
+              parallel([&](int32_t w) {
+                std::vector<int32_t> words, labels;
+                LineBuf lb;
+                std::istream in(&lb);
+                for (int64_t i = n * w / t; i < n * (w + 1) / t; i++) {
+                  lb.set(buf + starts[i], buf + starts[i + 1]);
+                  in.clear();
+                  d->getLine(in, words, labels);
+                  count[i] = words.size();
+                  block[w].insert(block[w].end(), words.begin(), words.end());
+                }
+              });
+            }
+            py::array_t<int64_t> offsets(n + 1);
+            auto po = offsets.mutable_unchecked<1>();
+            int64_t total = 0;
+            for (int64_t i = 0; i < n; i++) {
+              po(i) = total;
+              total += count[i];
+            }
+            po(n) = total;
+            py::array_t<int32_t> ids(total);
+            int32_t* pi = ids.mutable_data();
+            const int64_t* off = offsets.data();
+            {
+              py::gil_scoped_release release;
+              parallel([&](int32_t w) {
+                std::copy(block[w].begin(), block[w].end(), pi + off[n * w / t]);
+              });
+            }
+            return py::make_tuple(ids, offsets);
+          })
+      .def(
+          "getFeatures",
+          // The input-matrix rows a prediction averages, for each line (each must end in a newline, as
+          // for predict): words, character n-gram buckets and word n-grams, from Dictionary::getLine.
+          // Returned flat, as (ids, offsets) with line i's ids in ids[offsets[i]:offsets[i+1]], the
+          // input format of an embedding bag, so the rest of the prediction can run elsewhere (e.g. on
+          // a GPU). Lines are split among threads, without the GIL.
+          [](fasttext::FastText& m, const std::vector<std::string>& lines, int32_t threads) {
+            std::shared_ptr<const fasttext::Dictionary> d = m.getDictionary();
+            std::vector<std::vector<int32_t>> feats(lines.size());
+            {
+              py::gil_scoped_release release;
+              const int64_t n = lines.size();
+              const int32_t t = std::max<int32_t>(1, std::min<int64_t>(threads, n));
+              // One stream per thread reads each line in place (no copy, no stream built per line).
+              struct LineBuf : std::streambuf {
+                void set(const std::string& s) {
+                  char* b = const_cast<char*>(s.data());
+                  setg(b, b, b + s.size());
+                }
+              };
+              auto work = [&](int32_t w) {
+                std::vector<int32_t> labels;
+                LineBuf buf;
+                std::istream in(&buf);
+                for (int64_t i = n * w / t; i < n * (w + 1) / t; i++) {
+                  buf.set(lines[i]);
+                  in.clear();
+                  d->getLine(in, feats[i], labels);
+                }
+              };
+              std::vector<std::thread> pool;
+              for (int32_t w = 1; w < t; w++) {
+                pool.emplace_back(work, w);
+              }
+              work(0);
+              for (auto& th : pool) {
+                th.join();
+              }
+            }
+            int64_t total = 0;
+            for (const auto& f : feats) {
+              total += f.size();
+            }
+            py::array_t<int32_t> ids(total);
+            py::array_t<int64_t> offsets(lines.size() + 1);
+            auto pi = ids.mutable_unchecked<1>();
+            auto po = offsets.mutable_unchecked<1>();
+            int64_t k = 0;
+            for (size_t i = 0; i < feats.size(); i++) {
+              po(i) = k;
+              for (int32_t id : feats[i]) {
+                pi(k++) = id;
+              }
+            }
+            po(feats.size()) = k;
+            return py::make_tuple(ids, offsets);
+          })
       .def(
           "multilineGetLine",
           [](fasttext::FastText& m,

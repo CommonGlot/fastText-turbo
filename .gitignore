@@ -5,7 +5,8 @@
 *.bc
 .DS_Store
 data
-fasttext
+/fasttext
+build/
 result
 website/node_modules/
 package-lock.json

@@ -198,7 +198,8 @@ class _FastText:
         self.f.getInputVector(b, ind)
         return np.array(b)
 
-    def predict(self, text, k=1, threshold=0.0, on_unicode_error="strict", threads=1):
+    def predict(self, text, k=1, threshold=0.0, on_unicode_error="strict", threads=1, device=None,
+                batch_size=None):
         """
         Given a string, get a list of labels and a list of
         corresponding probabilities. k controls the number
@@ -221,8 +222,20 @@ class _FastText:
         received for a single line of text. A list is scored in batches; with
         threads > 1 the batches are shared among that many threads (the
         results are the same as with threads=1).
+
+        With device="cuda" (or "cuda:1", a list such as ["cuda:0", "cuda:1"],
+        or any PyTorch device) a list is scored on that device: the CPU builds
+        the features with `threads` threads and each device computes the rest
+        (needs PyTorch, a softmax model and an unquantized model). batch_size
+        (lines per batch) is chosen from each device's free memory unless given;
+        a batch that runs out of memory is split and retried. Labels are the
+        CPU's; probabilities differ in the last float digits.
         """
 
+        if device is not None and type(text) == list:
+            from fasttext import gpu
+            return gpu.predict(self, [_one_line(entry) for entry in text], k, threshold, int(threads), device,
+                               on_unicode_error, batch_size)
         if type(text) == list:
             text = [_one_line(entry) for entry in text]
             all_labels, all_probs = self.f.multilinePredict(

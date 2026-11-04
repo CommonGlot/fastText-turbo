@@ -43,6 +43,26 @@ with tempfile.TemporaryDirectory() as root:
             for (l1, p1), l2, p2 in zip(one, labels_b, probs_b):
                 assert list(l1) == list(l2), (l1, l2)
                 assert np.array_equal(p1, p2), (p1, p2)
+        # getFeatures / getFeaturesBytes: the input rows predict averages, so their mean is the
+        # sentence vector; device= (when PyTorch and a GPU are there) gives the CPU's labels.
+        texts = [t for texts in EXAMPLES.values() for t in texts] + ["", "x"]
+        ids, off = again.f.getFeatures([t + "\n" for t in texts], 2)
+        ids_b, off_b = again.f.getFeaturesBytes("".join(t + "\n" for t in texts).encode("utf-8"), 3)
+        assert np.array_equal(ids, ids_b) and np.array_equal(off, off_b)
+        inp = again.get_input_matrix()
+        for i, t in enumerate(texts):
+            mean = inp[ids[off[i]:off[i + 1]]].mean(axis=0)
+            assert np.allclose(mean, again.get_sentence_vector(t), atol=1e-6), t
+        try:
+            import torch
+            gpu = torch.cuda.is_available()
+        except ImportError:
+            gpu = False
+        if gpu:
+            labels_g, probs_g = again.predict(lines, k=3, threads=2, device="cuda")
+            labels_c, probs_c = again.predict(lines, k=3, threads=2)
+            assert [list(x) for x in labels_g] == [list(x) for x in labels_c]
+            assert max((np.abs(a - b).max() if len(a) else 0.0) for a, b in zip(probs_g, probs_c)) < 1e-4
     try:
         fasttext.train_supervised(input=train, crop_prob=1.5, verbose=0)
     except ValueError:

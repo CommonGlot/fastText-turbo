@@ -20,6 +20,13 @@ same `import fasttext`, command line and model files, and:
   GIL; the output is the same as one line at a time. On GlotLID (dimension 96,
   2,060 labels) and 100k lines, a list is 1.4x faster than one call per line
   with one thread and 8.6x with eight.
+- **GPU prediction:** `model.predict(list_of_lines, k, threshold, threads=48, device="cuda")`
+  (or `device=["cuda:0", "cuda:1"]`, or any PyTorch device) scores a list on GPUs for softmax
+  models: the CPU computes each line's features in C++ threads and each device averages the input
+  rows and applies the output layer. The batch size follows each device's free memory (or
+  `batch_size=`), and a batch that runs out of memory is split and retried. Labels are the CPU's;
+  probabilities differ in the last float digits. GlotLID v4 on CommonLID: 143k lines/s on 48 CPU
+  threads, 390k with two Tesla T4s. Needs PyTorch: `pip install fasttext-turbo[gpu]`.
 - **NumPy 1 and 2:** the `copy=False` calls that fail on NumPy 2 are fixed.
 - **Short-text training:** `-cropProb`, `-cropMin`, `-cropMax`,
   `-cropUnit char|word` train on random spans of each line.

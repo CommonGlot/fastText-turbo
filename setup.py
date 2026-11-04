@@ -205,6 +205,7 @@ setup(
         "Operating System :: MacOS",
     ],
     install_requires=["numpy"],
+    extras_require={"gpu": ["torch"]},
     cmdclass={"build_ext": BuildExt},
     packages=[
         str("fasttext"),
