@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-15, windows-latest]
+        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: pypa/cibuildwheel@v4.3.5
@@ -35,6 +35,32 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: wheels-${{ matrix.os }}
+          path: wheelhouse/*.whl
+
+  # macOS on its own: GitHub's macOS arm64 runners are often unavailable (the job is cancelled
+  # without starting). On pushes that does not fail the run or skip the NumPy 1 test; a release
+  # still needs it, since publish depends on it.
+  wheels-macos:
+    name: Wheels on macos-15
+    runs-on: macos-15
+    continue-on-error: ${{ github.event_name != 'release' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pypa/cibuildwheel@v4.3.5
+        env:
+          CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-* cp315-*"
+          CIBW_SKIP: "*-win32 *-manylinux_i686 *-musllinux_*"
+          # manylinux_2_28 has NumPy wheels for every supported Python
+          CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
+          CIBW_MANYLINUX_AARCH64_IMAGE: manylinux_2_28
+          # Intel and Apple-silicon wheels from the arm64 runner
+          CIBW_ARCHS_MACOS: x86_64 arm64
+          CIBW_ENVIRONMENT_MACOS: MACOSX_DEPLOYMENT_TARGET=11.0
+          CIBW_TEST_REQUIRES: numpy
+          CIBW_TEST_COMMAND: python {project}/.github/scripts/smoke_test.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-macos-15
           path: wheelhouse/*.whl
 
   numpy1:
@@ -69,7 +95,7 @@ jobs:
   publish:
     name: Publish to PyPI
     if: github.event_name == 'release'
-    needs: [wheels, numpy1, sdist]
+    needs: [wheels, wheels-macos, numpy1, sdist]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
